@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>投稿審查系統</title>
+<style>
+/* 審查狀態顏色 */
+.status-editing {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.status-reviewing {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-approved {
+    background: #dcfce7;
+    color: #166534;
+}
+
+/* 按鈕動畫 */
+button {
+    transition: all 0.2s ease;
+}
+
+button:hover {
+    transform: translateY(-2px);
+}
+
+/* 表格滑鼠效果 */
+tbody tr:hover {
+    background: #f8fafc;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f1f5f9;
+  color: #1e293b;
+}
+header {
+  background: #2563eb;
+  color: white;
+  padding: 20px 35px;
+}
+main {
+  max-width: 1050px;
+  margin: 35px auto;
+  padding: 0 20px;
+}
+.panel {
+  background: white;
+  padding: 25px;
+  border-radius: 12px;
+  margin-bottom: 25px;
+  box-shadow: 0 3px 12px #0001;
+}
+button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 15px;
+  cursor: pointer;
+  margin: 3px;
+}
+button:hover { opacity: .85; }
+.danger { background: #dc2626; }
+.success { background: #16a34a; }
+.secondary { background: #64748b; }
+input, select, textarea {
+  width: 100%;
+  padding: 12px;
+  margin: 8px 0 18px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font: inherit;
+}
+textarea { height: 150px; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 13px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+.table-wrap { overflow-x: auto; }
+.hidden { display: none; }
+.status {
+  padding: 5px 9px;
+  border-radius: 5px;
+  background: #e2e8f0;
+  white-space: nowrap;
+}
+</style> 
+</head>
+<body>
+
+<header>
+  <h1>投稿審查系統</h1>
+  <p>線上稿件管理平台</p>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>選擇身分</h2>
+    <p id="roleLabel">目前身分：作者</p>
+    <button onclick="switchRole('author')">
+      作者介面
+    </button>
+    <button onclick="switchRole('editor')">
+      編輯介面
+    </button>
+  </div>
+
+  <section id="authorPage">
+    <div class="panel">
+      <h2>新增／編輯稿件</h2>
+
+      <input type="hidden" id="editId">
+
+      <label>文章類別</label>
+      <select id="category">
+        <option value="科技">科技</option>
+        <option value="財經">財經</option>
+        <option value="生活">生活</option>
+        <option value="教育">教育</option>
+      </select>
+
+      <label>文章標題</label>
+      <input id="title" placeholder="輸入文章標題">
+
+      <label>文章內容</label>
+      <textarea id="content"
+        placeholder="輸入文章內容"></textarea>
+
+      <button onclick="saveArticle()">儲存稿件</button>
+      <button class="secondary" onclick="clearForm()">
+        清空表單
+      </button>
+    </div>
+
+    <div class="panel">
+      <h2>我的投稿清單</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>類別</th>
+              <th>標題</th>
+              <th>審查狀態</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="authorList"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="editorPage" class="hidden">
+    <div class="panel">
+      <h2>待審查稿件</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>作者</th>
+              <th>類別</th>
+              <th>標題</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="editorList"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const STORAGE_KEY = "submission-demo-articles";
+let articles = [];
+
+try {
+  const saved = JSON.parse(
+    localStorage.getItem(STORAGE_KEY) || "[]"
+  );
+  articles = Array.isArray(saved) ? saved : [];
+} catch {
+  articles = [];
+}
+
+function persist() {
+  localStorage.setItem(
+    STORAGE_KEY, JSON.stringify(articles)
+  );
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+function switchRole(role) {
+    document.getElementById("roleLabel").textContent =
+  "目前身分：" + (role === "author" ? "作者" : "編輯");
+  document.getElementById("authorPage")
+    .classList.toggle("hidden", role !== "author");
+  document.getElementById("editorPage")
+    .classList.toggle("hidden", role !== "editor");
+  render();
+}
+
+function saveArticle() {
+  const id = document.getElementById("editId").value;
+  const category = document.getElementById("category").value;
+  const title = document.getElementById("title").value.trim();
+  const content = document.getElementById("content").value.trim();
+
+  if (!title || !content) {
+    alert("請填寫標題和文章內容");
+    return;
+  }
+
+  if (id) {
+    const article = articles.find(a => a.id === id);
+    if (!article || article.status !== "編輯中") {
+      alert("此稿件不能修改");
+      return;
+    }
+    article.category = category;
+    article.title = title;
+    article.content = content;
+  } else {
+    articles.push({
+      id: crypto.randomUUID(),
+      author: "示範作者",
+      category,
+      title,
+      content,
+      status: "編輯中"
+    });
+  }
+
+  persist();
+  clearForm();
+  render();
+  alert("稿件儲存成功！");
+}
+
+function clearForm() {
+  document.getElementById("editId").value = "";
+  document.getElementById("category").value = "科技";
+  document.getElementById("title").value = "";
+  document.getElementById("content").value = "";
+}
+
+function editArticle(id) {
+  const a = articles.find(a => a.id === id);
+  if (!a || a.status !== "編輯中") return;
+
+  document.getElementById("editId").value = a.id;
+  document.getElementById("category").value = a.category;
+  document.getElementById("title").value = a.title;
+  document.getElementById("content").value = a.content;
+  window.scrollTo(0, 0);
+}
+
+function deleteArticle(id) {
+  const a = articles.find(a => a.id === id);
+  if (!a || a.status !== "編輯中") return;
+  if (!confirm("確定要刪除這篇稿件嗎？")) return;
+
+  articles = articles.filter(a => a.id !== id);
+  persist();
+  clearForm();
+  render();
+}
+
+function submitArticle(id) {
+  const a = articles.find(a => a.id === id);
+  if (!a || a.status !== "編輯中") return;
+  if (!confirm("確定送出審查？")) return;
+
+  a.status = "審查中";
+  persist();
+  clearForm();
+  render();
+}
+
+function reviewArticle(id, approved) {
+  const a = articles.find(a => a.id === id);
+  if (!a || a.status !== "審查中") return;
+
+  a.status = approved ? "已通過" : "編輯中";
+  persist();
+  render();
+}
+
+function viewArticle(id) {
+  const a = articles.find(a => a.id === id);
+  if (!a) return;
+  alert(
+    "標題：" + a.title +
+    "\n類別：" + a.category +
+    "\n\n" + a.content
+  );
+}
+
+function render() {
+  const authorList = document.getElementById("authorList");
+  const editorList = document.getElementById("editorList");
+
+  authorList.innerHTML = articles.map(a => `
+    <tr>
+      <td>${escapeHtml(a.category)}</td>
+      <td>${escapeHtml(a.title)}</td>
+      
+<td>
+  <span class="status ${
+    a.status === '編輯中' ? 'status-editing' :
+    a.status === '審查中' ? 'status-reviewing' :
+    'status-approved'
+  }">${a.status}</span>
+</td>
+
+      <td>
+        <button onclick="viewArticle('${a.id}')">
+          查看
+        </button>
+        ${a.status === "編輯中" ? `
+          <button onclick="editArticle('${a.id}')">
+            編輯
+          </button>
+          <button class="danger"
+            onclick="deleteArticle('${a.id}')">
+            刪除
+          </button>
+          <button class="success"
+            onclick="submitArticle('${a.id}')">
+            送出審查
+          </button>
+        ` : ""}
+      </td>
+    </tr>
+  `).join("") || '<tr><td colspan="4">尚無稿件</td></tr>';
+
+  editorList.innerHTML = articles
+    .filter(a => a.status === "審查中")
+    .map(a => `
+      <tr>
+        <td>${escapeHtml(a.author)}</td>
+        <td>${escapeHtml(a.category)}</td>
+        <td>${escapeHtml(a.title)}</td>
+        <td>
+          <button onclick="viewArticle('${a.id}')">
+            查看內容
+          </button>
+          <button class="success"
+            onclick="reviewArticle('${a.id}', true)">
+            通過
+          </button>
+          <button class="danger"
+            onclick="reviewArticle('${a.id}', false)">
+            退回
+          </button>
+        </td>
+      </tr>
+    `).join("") ||
+    '<tr><td colspan="4">目前沒有待審查稿件</td></tr>';
+}
+
+render();
+</script>
+</body>
+</html>
